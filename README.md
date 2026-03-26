@@ -1,6 +1,6 @@
 # 🚀 GitLab Deployment Toolkit (GDT)
 
-[![CI Pipeline](https://github.com/ArjunSrivastava1/gitlab-deployment-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/ArjunSrivastava1/gitlab-deployment-toolkit/actions)
+<!--[![CI Pipeline](https://github.com/ArjunSrivastava1/gitlab-deployment-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/ArjunSrivastava1/gitlab-deployment-toolkit/actions)-->
 [![Go Version](https://img.shields.io/badge/Go-1.21-blue.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://www.docker.com/)
