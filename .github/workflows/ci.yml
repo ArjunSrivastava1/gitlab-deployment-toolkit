@@ -1,0 +1,249 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  # Job 1: Lint and Format Check
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+    
+    - name: Download dependencies
+      run: go mod download
+    
+    - name: Check formatting
+      run: |
+        go fmt ./...
+        git diff --exit-code
+    
+    - name: Run go vet
+      run: go vet ./...
+    
+    - name: Run staticcheck (optional but good)
+      run: |
+        go install honnef.co/go/tools/cmd/staticcheck@latest
+        staticcheck ./...
+
+  # Job 2: Unit Tests
+  unit-tests:
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+    
+    - name: Download dependencies
+      run: go mod download
+    
+    - name: Run unit tests
+      run: go test -v -race -coverprofile=coverage.out ./...
+    
+    - name: Display coverage
+      run: go tool cover -func=coverage.out
+    
+    - name: Upload coverage
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: coverage.out
+
+  # Job 3: Build Binary
+  build:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+    
+    - name: Download dependencies
+      run: go mod download
+    
+    - name: Build for Linux
+      run: |
+        GOOS=linux GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-linux-amd64 ./cmd/gdt
+    
+    - name: Build for macOS
+      run: |
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-darwin-amd64 ./cmd/gdt
+    
+    - name: Build for Windows
+      run: |
+        GOOS=windows GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-windows-amd64.exe ./cmd/gdt
+    
+    - name: List built binaries
+      run: ls -la gdt-*
+    
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: binaries
+        path: |
+          gdt-linux-amd64
+          gdt-darwin-amd64
+          gdt-windows-amd64.exe
+
+  # Job 4: Docker Build
+  docker:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false
+        tags: gitlab-deployment-toolkit:latest
+        load: true
+    
+    - name: Test Docker image
+      run: |
+        docker run --rm gitlab-deployment-toolkit:latest -version
+
+  # Job 5: Kubernetes Integration Tests
+  kubernetes-tests:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+    
+    - name: Install kubectl
+      run: |
+        curl -LO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+        kubectl version --client
+    
+    - name: Create kind cluster
+      uses: helm/kind-action@v1
+      with:
+        config: kind-config.yaml
+        wait: 60s
+    
+    - name: Verify cluster is running
+      run: |
+        kubectl cluster-info
+        kubectl get nodes
+    
+    - name: Deploy test nginx application
+      run: |
+        kubectl create deployment nginx-test --image=nginx --replicas=2
+        kubectl expose deployment nginx-test --port=80 --target-port=80
+        kubectl wait --for=condition=available deployment/nginx-test --timeout=60s
+        kubectl get pods
+    
+    - name: Build GDT binary
+      run: go build -o gdt ./cmd/gdt
+    
+    - name: Test listing deployments
+      run: |
+        ./gdt -list-deployments default | grep -q nginx-test
+        echo "✅ List deployments test passed"
+    
+    - name: Test checking deployment
+      run: |
+        ./gdt -check-k8s default/nginx-test | grep -q "✅"
+        echo "✅ Deployment check test passed"
+    
+    - name: Validate manifest
+      run: |
+        ./gdt -validate examples/example-config.yaml | grep -q "✅ Validation passed"
+        echo "✅ Manifest validation test passed"
+    
+    - name: Generate Terraform
+      run: |
+        ./gdt -generate-tf test-app | grep -q "kubernetes_deployment"
+        echo "✅ Terraform generation test passed"
+
+  # Job 6: Security Scan (optional but impressive)
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'table'
+        exit-code: '0'
+        severity: 'CRITICAL,HIGH'
+    
+    - name: Run GoSec security scanner
+      run: |
+        go install github.com/securego/gosec/v2/cmd/gosec@latest
+        gosec ./...
+
+  # Job 7: Release (only runs on tags)
+  release:
+    runs-on: ubuntu-latest
+    needs: [kubernetes-tests, security-scan]
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+    
+    - name: Build all binaries
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/}
+        GOOS=linux GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-linux-amd64 ./cmd/gdt
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-darwin-amd64 ./cmd/gdt
+        GOOS=windows GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-windows-amd64.exe ./cmd/gdt
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          gdt-linux-amd64
+          gdt-darwin-amd64
+          gdt-windows-amd64.exe
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
