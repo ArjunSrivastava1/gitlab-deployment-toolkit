@@ -84,15 +84,15 @@ jobs:
     
     - name: Build for Linux
       run: |
-        GOOS=linux GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-linux-amd64 ./cmd/gdt
+        GOOS=linux GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-linux-amd64 ./cmd/gitlab-deployment-toolkit
     
     - name: Build for macOS
       run: |
-        GOOS=darwin GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-darwin-amd64 ./cmd/gdt
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-darwin-amd64 ./cmd/gitlab-deployment-toolkit
     
     - name: Build for Windows
       run: |
-        GOOS=windows GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-windows-amd64.exe ./cmd/gdt
+        GOOS=windows GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-windows-amd64.exe ./cmd/gitlab-deployment-toolkit
     
     - name: List built binaries
       run: ls -la gdt-*
@@ -170,7 +170,7 @@ jobs:
         kubectl get pods
     
     - name: Build GDT binary
-      run: go build -o gdt ./cmd/gdt
+      run: go build -o gdt ./cmd/gitlab-deployment-toolkit
     
     - name: Test listing deployments
       run: |
@@ -233,9 +233,9 @@ jobs:
     - name: Build all binaries
       run: |
         VERSION=${GITHUB_REF#refs/tags/}
-        GOOS=linux GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-linux-amd64 ./cmd/gdt
-        GOOS=darwin GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-darwin-amd64 ./cmd/gdt
-        GOOS=windows GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-windows-amd64.exe ./cmd/gdt
+        GOOS=linux GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-linux-amd64 ./cmd/gitlab-deployment-toolkit
+        GOOS=darwin GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-darwin-amd64 ./cmd/gitlab-deployment-toolkit
+        GOOS=windows GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-windows-amd64.exe ./cmd/gitlab-deployment-toolkit
     
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
