@@ -1,0 +1,21 @@
+# Binaries
+gitlab-deployment-toolkit
+dist/
+
+# Dependency directories
+vendor/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Go files
+*.exe
+*.test
+*.prof
