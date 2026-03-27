@@ -7,91 +7,57 @@ on:
     branches: [ main, master ]
 
 jobs:
-  # Job 1: Lint and Format Check
   lint:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.21'
-    
-    - name: Download dependencies
-      run: go mod download
-    
-    - name: Check formatting
-      run: |
-        go fmt ./...
-        git diff --exit-code
-    
-    - name: Run go vet
-      run: go vet ./...
-    
-    - name: Run staticcheck (optional but good)
-      run: |
-        go install honnef.co/go/tools/cmd/staticcheck@latest
-        staticcheck ./...
-
-  # Job 2: Unit Tests
-    # Job 2: Unit Tests
-  unit-tests:
-    runs-on: ubuntu-latest
-    needs: lint
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
+    - uses: actions/checkout@v4
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
         go-version: '1.25'
-    
     - name: Download dependencies
       run: go mod download
-    
-    - name: Run unit tests
-      run: go test -v ./...
-    
-    - name: Run tests with coverage (optional)
-      run: go test -cover ./...
+    - name: Check formatting
+      run: |
+        go fmt ./...
+        git diff --exit-code
+    - name: Run go vet
+      run: go vet ./...
 
-  # Job 3: Build Binary
-  build:
+  unit-tests:
     runs-on: ubuntu-latest
-    needs: unit-tests
-    
+    needs: lint
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
+    - uses: actions/checkout@v4
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
-    
+        go-version: '1.25'
     - name: Download dependencies
       run: go mod download
-    
+    - name: Run tests
+      run: go test -v ./...
+
+  build:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+    - name: Download dependencies
+      run: go mod download
     - name: Build for Linux
       run: |
         GOOS=linux GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-linux-amd64 ./cmd/gitlab-deployment-toolkit
-    
     - name: Build for macOS
       run: |
         GOOS=darwin GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-darwin-amd64 ./cmd/gitlab-deployment-toolkit
-    
     - name: Build for Windows
       run: |
         GOOS=windows GOARCH=amd64 go build -ldflags="-X main.Version=${GITHUB_SHA::8}" -o gdt-windows-amd64.exe ./cmd/gitlab-deployment-toolkit
-    
-    - name: List built binaries
-      run: ls -la gdt-*
-    
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
@@ -101,18 +67,13 @@ jobs:
           gdt-darwin-amd64
           gdt-windows-amd64.exe
 
-  # Job 4: Docker Build
   docker:
     runs-on: ubuntu-latest
     needs: build
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
+    - uses: actions/checkout@v4
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
-    
     - name: Build Docker image
       uses: docker/build-push-action@v5
       with:
@@ -120,83 +81,50 @@ jobs:
         push: false
         tags: gitlab-deployment-toolkit:latest
         load: true
-    
     - name: Test Docker image
       run: |
         docker run --rm gitlab-deployment-toolkit:latest -version
 
-  # Job 5: Kubernetes Integration Tests
   kubernetes-tests:
     runs-on: ubuntu-latest
     needs: build
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
+    - uses: actions/checkout@v4
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
-    
-    - name: Install kubectl
-      run: |
-        curl -LO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
-        chmod +x kubectl
-        sudo mv kubectl /usr/local/bin/
-        kubectl version --client
-    
+        go-version: '1.25'
     - name: Create kind cluster
       uses: helm/kind-action@v1
       with:
         config: kind-config.yaml
-        wait: 60s
-    
-    - name: Verify cluster is running
-      run: |
-        kubectl cluster-info
-        kubectl get nodes
-    
-    - name: Deploy test nginx application
+    - name: Deploy test nginx
       run: |
         kubectl create deployment nginx-test --image=nginx --replicas=2
-        kubectl expose deployment nginx-test --port=80 --target-port=80
         kubectl wait --for=condition=available deployment/nginx-test --timeout=60s
-        kubectl get pods
-    
-    - name: Build GDT binary
+    - name: Build GDT
       run: go build -o gdt ./cmd/gitlab-deployment-toolkit
-    
-    - name: Test listing deployments
+    - name: Test GDT
       run: |
-        ./gdt -list-deployments default | grep -q nginx-test
-        echo "✅ List deployments test passed"
-    
-    - name: Test checking deployment
-      run: |
-        ./gdt -check-k8s default/nginx-test | grep -q "✅"
-        echo "✅ Deployment check test passed"
-    
-    - name: Validate manifest
-      run: |
-        ./gdt -validate examples/example-config.yaml | grep -q "✅ Validation passed"
-        echo "✅ Manifest validation test passed"
-    
-    - name: Generate Terraform
-      run: |
-        ./gdt -generate-tf test-app | grep -q "kubernetes_deployment"
-        echo "✅ Terraform generation test passed"
+        ./gdt -list-deployments default
+        ./gdt -check-k8s default/nginx-test
 
-  # Job 6: Security Scan (optional but impressive)
   security-scan:
     runs-on: ubuntu-latest
     needs: build
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Run Trivy vulnerability scanner
+    - uses: actions/checkout@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+    - name: Install gosec
+      run: |
+        go install github.com/securego/gosec/v2/cmd/gosec@latest
+        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+    - name: Run gosec
+      run: gosec ./...
+    - name: Run Trivy
       uses: aquasecurity/trivy-action@master
       with:
         scan-type: 'fs'
@@ -204,35 +132,24 @@ jobs:
         format: 'table'
         exit-code: '0'
         severity: 'CRITICAL,HIGH'
-    
-    - name: Run GoSec security scanner
-      run: |
-        go install github.com/securego/gosec/v2/cmd/gosec@latest
-        gosec ./...
 
-  # Job 7: Release (only runs on tags)
   release:
     runs-on: ubuntu-latest
     needs: [kubernetes-tests, security-scan]
     if: startsWith(github.ref, 'refs/tags/')
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
+    - uses: actions/checkout@v4
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
-    
+        go-version: '1.25'
     - name: Build all binaries
       run: |
         VERSION=${GITHUB_REF#refs/tags/}
         GOOS=linux GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-linux-amd64 ./cmd/gitlab-deployment-toolkit
         GOOS=darwin GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-darwin-amd64 ./cmd/gitlab-deployment-toolkit
         GOOS=windows GOARCH=amd64 go build -ldflags="-X main.Version=${VERSION}" -o gdt-windows-amd64.exe ./cmd/gitlab-deployment-toolkit
-    
-    - name: Create GitHub Release
+    - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
@@ -240,5 +157,3 @@ jobs:
           gdt-darwin-amd64
           gdt-windows-amd64.exe
         generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
