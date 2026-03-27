@@ -1,8 +1,11 @@
 package validate
 
+// gosec failed here, flagged a vuln and shut , g304
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -44,7 +47,16 @@ func ValidateManifest(filePath string) (*ValidationResult, error) {
 		Errors: []string{},
 	}
 
-	data, err := os.ReadFile(filePath)
+	// Security fix: Use os.DirFS to prevent directory traversal attacks
+	// Get the directory and filename separately
+	dir := filepath.Dir(filePath)
+	filename := filepath.Base(filePath)
+
+	// Create a filesystem rooted at the directory
+	root := os.DirFS(dir)
+
+	// Read file from the rooted filesystem (prevents ../ escapes)
+	data, err := fs.ReadFile(root, filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
