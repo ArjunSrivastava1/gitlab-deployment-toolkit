@@ -1,4 +1,5 @@
-FROM golang:1.21 AS builder
+FROM golang:1.25 AS builder 
+#fail detected here, 1.25 not 1.21, failed image build
 
 WORKDIR /app
 
